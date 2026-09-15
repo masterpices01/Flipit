@@ -139,7 +139,7 @@ const FloatingSettingsPanel = ({ settings, setSettings, onRestart, moves }) => {
             dropdownIconColor="#000"
             mode="dropdown"
           >
-            {[12, 16, 20, 24,28,30,36,54].map(n => <Picker.Item key={n} label={`${n} Cards`} value={n} color="#000" />)}
+            {[12, 16, 20, 24,28,30,36,42,48,54,60].map(n => <Picker.Item key={n} label={`${n} Cards`} value={n} color="#000" />)}
           </Picker>
         </View>
 

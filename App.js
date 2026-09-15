@@ -18,7 +18,6 @@ ALL_ICONS.push("🐊");
 ALL_ICONS.push("🐢");
 ALL_ICONS.push("🦠");
 ALL_ICONS.push("⭐️");
-
 ALL_ICONS.push("⚡️");
 ALL_ICONS.push("☄️");
 ALL_ICONS.push("🌈");
