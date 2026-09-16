@@ -33,7 +33,6 @@ ALL_ICONS.push("☀️");
 ALL_ICONS.push("🏖️");
 ALL_ICONS.push("🧊");
 window.icons = ALL_ICONS;
-console.error(window.icons);
 
 const STORAGE_KEY = 'MEMORY_GAME_SETTINGS_V1';
 
@@ -53,7 +52,7 @@ const Card = ({ card, index, onPress, isOpen, isMatched, isSuccess, settings, la
     });
     anim.start();
     
-    return () => anim.stop(); // 使用 stop() 比 stopAnimation() 更標準
+    return () => anim.stop();
   }, [isOpen]);
 
   const frontInterpolate = animatedValue.interpolate({
@@ -80,7 +79,6 @@ const Card = ({ card, index, onPress, isOpen, isMatched, isSuccess, settings, la
       <Animated.View style={[
         styles.cardSide, 
         styles.cardFront, 
-        // [Fix] 針對 Android 優化：成功時若要加框，建議不要同時動態改變過多屬性
         isSuccess && { 
             backgroundColor: '#27ae60',
             borderWidth: 3, 
@@ -101,6 +99,9 @@ export default function App() {
   const matchTimeoutRef = useRef(null);
   const isProcessing = useRef(false); 
   const isInitializing = useRef(true);
+  
+  // 新增：用來記錄每一步的歷史狀態
+  const historyRef = useRef([]); 
   
   const [successPair, setSuccessPair] = useState([]);
   
@@ -185,8 +186,10 @@ export default function App() {
   }, [settings.difficulty, settings.boardSizeScale, settings.boardAspect, width, height]);
 
   const setupDeck = useCallback(() => {
+    const { cols } = getOptimalLayout(settings.difficulty); // 取得正確的欄數供 console.table 使用
     const icons = shuffle(ALL_ICONS).slice(0, settings.difficulty / 2);
     const deck = shuffle([...icons, ...icons]).map((s, i) => ({ id: i, symbol: s }));
+    
     setCards(deck);
     setMatchedIndices([]);
     setOpenedCards([]);
@@ -194,17 +197,56 @@ export default function App() {
     setTurnCounts({});
     setOverlay({ show: false, title: "", msg: "", success: false });
     setSuccessPair([]);
+    
     isProcessing.current = false;
+    historyRef.current = []; // 遊戲重置時清空歷史紀錄
     if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
+
+    // 印出目前的矩陣答案
+    const matrix = [];
+    for (let i = 0; i < deck.length; i += cols) {
+      matrix.push(deck.slice(i, i + cols).map(c => c.symbol));
+    }
+    console.log("=== 遊戲開始：解答矩陣 ===");
+    console.table(matrix);
+
   }, [settings.difficulty]);
 
   useEffect(() => { setupDeck(); }, [setupDeck]);
 
+  // 定義「回到上一動」功能
+  const undoMove = useCallback(() => {
+    if (historyRef.current.length === 0) {
+      console.log("已經沒有上一步可以還原了！");
+      return;
+    }
+    const lastState = historyRef.current.pop();
+    
+    // 恢復狀態
+    setMatchedIndices(lastState.matchedIndices);
+    setOpenedCards(lastState.openedCards);
+    setTurnCounts(lastState.turnCounts);
+    setMoves(lastState.moves);
+    setSuccessPair(lastState.successPair);
+    setOverlay(lastState.overlay); // 如果失敗跳出 Modal 也能還原
+    
+    // 如果正在等待配對動畫，將其中斷
+    if (matchTimeoutRef.current) {
+      clearTimeout(matchTimeoutRef.current);
+      matchTimeoutRef.current = null;
+    }
+    isProcessing.current = false;
+    console.log("已還原至上一個動作！");
+  }, []);
+
+  // 綁定至 window 供 Console 調用
   useEffect(() => {
+    window.redo = undoMove;
+    
     return () => {
       if (matchTimeoutRef.current) clearTimeout(matchTimeoutRef.current);
     };
-  }, []);
+  }, [undoMove]);
 
   const handleRestart = () => {
     if (matchTimeoutRef.current) {
@@ -229,10 +271,20 @@ export default function App() {
     }
   }, [settings.difficulty]);
 
-  // [Fix] 重寫後的 handlePress：邏輯依序執行，避免在 setState 內部產生副作用
   const handlePress = (idx) => {
     // 1. 基本阻擋條件
     if (matchedIndices.includes(idx) || overlay.show || openedCards.includes(idx)) return;
+    if (isProcessing.current && openedCards.length !== 2) return; 
+
+    // ✅ 記錄當下狀態到 historyRef (確保在修改前記錄)
+    historyRef.current.push({
+      matchedIndices,
+      openedCards,
+      turnCounts,
+      moves,
+      successPair,
+      overlay
+    });
 
     // 2. 處理「已翻兩張，點擊第三張」的情況
     if (openedCards.length === 2) {
@@ -253,23 +305,16 @@ export default function App() {
       // 點擊第三張時，前兩張處理完畢，新開這張
       setOpenedCards([idx]);
       setSuccessPair([]); 
-      // 更新這張新牌的點擊次數
       setTurnCounts(prev => ({ ...prev, [idx]: (Number(prev[idx]) || 0) + 1 }));
       return;
     }
 
     // 3. 處理正常翻牌（第1張或第2張）
-    if (isProcessing.current) return;
-
-    // 計算新的點擊次數 (Pull logic OUT of setState)
     const currentCount = Number(turnCounts[idx]) || 0;
     const newCount = currentCount + 1;
     const nextTurnCounts = { ...turnCounts, [idx]: newCount };
     
-    // 更新次數
     setTurnCounts(nextTurnCounts);
-
-    // 更新翻開的牌
     const newOpened = [...openedCards, idx];
     setOpenedCards(newOpened);
 
@@ -280,7 +325,7 @@ export default function App() {
       const isMatch = cards[fIdx].symbol === cards[sIdx].symbol;
 
       if (!isMatch) {
-        // 檢查失敗條件：如果任一張牌已經看過超過2次（包含這次）
+        // 檢查失敗條件
         const c1 = nextTurnCounts[fIdx] || 0;
         const c2 = nextTurnCounts[sIdx] || 0;
         
@@ -289,7 +334,6 @@ export default function App() {
           return;
         }
 
-        // 一般配對失敗
         isProcessing.current = true; 
         matchTimeoutRef.current = setTimeout(() => {
           setOpenedCards([]);
@@ -297,7 +341,6 @@ export default function App() {
           matchTimeoutRef.current = null;
         }, 1200);
       } else {
-        // 配對成功
         setSuccessPair([fIdx, sIdx]);
         isProcessing.current = true;
         matchTimeoutRef.current = setTimeout(() => {
@@ -373,7 +416,6 @@ const styles = StyleSheet.create({
   cardSide: { 
     position: 'absolute', width: '100%', height: '100%', 
     backfaceVisibility: 'hidden', borderRadius: 10, 
-    // [Fix] Android 上保留基礎 elevation，但避免在 render loop 中頻繁變動
     elevation: 5, 
     justifyContent: 'center', alignItems: 'center' 
   },
