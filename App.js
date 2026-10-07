@@ -112,7 +112,7 @@ export default function App() {
     difficulty: 12,
     boardSizeScale: 1.0, 
     boardAspect: 1.618,
-    orientation: 'DEFAULT',
+    orientation: 'LANDSCAPE',
     modalScale: 1.0,
   };
 
