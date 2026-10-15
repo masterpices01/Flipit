@@ -209,6 +209,19 @@ export default function App() {
     }
     console.log("=== 遊戲開始：解答矩陣 ===");
     console.table(matrix);
+    // 轉為 Google Sheet / Excel 支援的 TSV 格式（欄用 \t 分隔，列用 \n 分隔）
+const tsvString = matrix.map(row => row.join('\t')).join('\n');
+console.log("=== Google Sheet 複製用（點擊右側或整段選取複製）===");
+console.log(tsvString);
+
+// 僅在支援 Clipboard API 的瀏覽器環境下執行
+if (typeof navigator !== 'undefined' && navigator.clipboard) {
+  navigator.clipboard.writeText(tsvString)
+    .then(() => console.log("📋 已自動複製矩陣到剪貼簿，可直接至 Google Sheet 貼上！"))
+    .catch(() => {});
+}
+
+
 
   }, [settings.difficulty]);
 
